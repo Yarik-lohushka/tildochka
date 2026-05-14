@@ -315,6 +315,7 @@
 <a onclick="suggestQuote();closeMenu()">💬 Предложить цитату</a>
 <a onclick="suggestJoke();closeMenu()">😂 Предложить шутку</a>
 <a onclick="showAdminLogin();closeMenu()">👑 Стать админом</a>
+<a onclick="openCharactersShop();closeMenu()">🐔 Купить персонажа</a>
 </div>
 <div id="content">
 
@@ -477,6 +478,141 @@ var myChannel=localStorage.getItem('tildochka_channel')||'';
 var audioCtx=null;
 var lastSoundTime=0;
 
+// КАСТОМНЫЕ ПЕРСОНАЖИ ДЛЯ ИГР
+var customCharacters = [];
+var activeCharacter = null;
+
+// Загрузка купленных персонажей
+function loadCustomCharacters() {
+    var saved = localStorage.getItem('tildochka_characters');
+    if(saved) {
+        try {
+            customCharacters = JSON.parse(saved);
+        } catch(e) {}
+    }
+    
+    var active = localStorage.getItem('tildochka_active_character');
+    if(active) {
+        try {
+            activeCharacter = JSON.parse(active);
+        } catch(e) {}
+    }
+}
+
+// Сохранение персонажей
+function saveCustomCharacters() {
+    localStorage.setItem('tildochka_characters', JSON.stringify(customCharacters));
+    if(activeCharacter) {
+        localStorage.setItem('tildochka_active_character', JSON.stringify(activeCharacter));
+    }
+}
+
+// Покупка персонажа
+function buyCharacter(characterId, price) {
+    if(myEggs < price) {
+        alert('Не хватает яиц! Нужно ' + price + ' 🥚');
+        return false;
+    }
+    
+    if(customCharacters.some(c => c.id === characterId)) {
+        alert('У тебя уже есть этот персонаж!');
+        return false;
+    }
+    
+    myEggs -= price;
+    localStorage.setItem('tildochka_eggs', myEggs);
+    document.getElementById('headerEggs').textContent = myEggs;
+    db.ref('users/' + myUid).update({ eggs: myEggs });
+    
+    customCharacters.push({
+        id: characterId,
+        name: characterId,
+        price: price,
+        purchased: true
+    });
+    
+    saveCustomCharacters();
+    alert('✅ Персонаж куплен!');
+    return true;
+}
+
+// Выбрать активного персонажа
+function selectCharacter(characterId) {
+    var char = customCharacters.find(c => c.id === characterId);
+    if(!char) {
+        alert('Сначала купи этого персонажа в магазине!');
+        return false;
+    }
+    
+    activeCharacter = char;
+    saveCustomCharacters();
+    alert('✅ Теперь ты играешь за ' + characterId);
+    return true;
+}
+
+// Получить текущего персонажа для игры
+function getCurrentGameCharacter() {
+    if(activeCharacter) {
+        return activeCharacter.name;
+    }
+    return '🐔'; // Стандартный персонаж
+}
+
+// Магазин персонажей
+function openCharactersShop() {
+    var charactersShop = [
+        { id: '🐔', name: 'Курица', price: 0, default: true },
+        { id: '🐣', name: 'Цыплёнок', price: 30 },
+        { id: '🐓', name: 'Петух', price: 50 },
+        { id: '🦅', name: 'Орёл', price: 100 },
+        { id: '🦉', name: 'Сова', price: 80 },
+        { id: '🐧', name: 'Пингвин', price: 70 },
+        { id: '🦆', name: 'Утка', price: 60 },
+        { id: '🦜', name: 'Попугай', price: 90 },
+        { id: '🐦‍⬛', name: 'Ворон', price: 110 },
+        { id: '🐉', name: 'Дракон', price: 300 }
+    ];
+    
+    var html = '<h3>🐔 Кастомные персонажи для игр</h3><p>🥚 У тебя: ' + myEggs + '</p><div class="shop-grid">';
+    
+    charactersShop.forEach(char => {
+        var owned = char.default || customCharacters.some(c => c.id === char.id);
+        var isActive = activeCharacter && activeCharacter.id === char.id;
+        html += '<div class="shop-item' + (owned ? '' : ' locked') + '" style="flex-direction:column;width:70px;height:80px">';
+        html += '<div style="font-size:40px">' + char.id + '</div>';
+        html += '<div style="font-size:10px">' + char.name + '</div>';
+        if(char.price > 0 && !owned) {
+            html += '<div class="price" style="position:relative;margin-top:4px">' + char.price + '🥚</div>';
+            html += '<button onclick="buyCharacter(\'' + char.id + '\',' + char.price + '); setTimeout(openCharactersShop, 100)" style="font-size:10px;padding:2px 5px;margin:2px">Купить</button>';
+        } else if(owned && !char.default) {
+            if(isActive) {
+                html += '<div style="font-size:10px;color:#4f4">✅ Активен</div>';
+            } else {
+                html += '<button onclick="selectCharacter(\'' + char.id + '\'); setTimeout(openCharactersShop, 100)" style="font-size:10px;padding:2px 5px;margin:2px">Выбрать</button>';
+            }
+        } else if(char.default && isActive) {
+            html += '<div style="font-size:10px;color:#4f4">✅ Активен</div>';
+        } else if(char.default) {
+            html += '<button onclick="selectCharacter(\'' + char.id + '\'); setTimeout(openCharactersShop, 100)" style="font-size:10px;padding:2px 5px;margin:2px">Выбрать</button>';
+        }
+        html += '</div>';
+    });
+    
+    html += '</div><button onclick="document.getElementById(\'charactersModal\').classList.remove(\'show\')" style="margin-top:10px">Закрыть</button>';
+    
+    // Создаём модальное окно если его нет
+    var modal = document.getElementById('charactersModal');
+    if(!modal) {
+        modal = document.createElement('div');
+        modal.id = 'charactersModal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = '<div class="modal-box" id="charactersModalBox"></div>';
+        document.body.appendChild(modal);
+    }
+    document.getElementById('charactersModalBox').innerHTML = html;
+    modal.classList.add('show');
+}
+
 // ==================== АНЕКДОТЫ ДЛЯ ЗАГРУЗКИ ====================
 var loadingJokes = [
     "— Доктор, я ходить буду?\n— Ну, если только под себя.\n— А плавать?\n— Если будете много ходить.",
@@ -573,9 +709,49 @@ pta:{title:'Приключения ПТА',poster:'cover-pta.jpg',video:'pta.mp4
 description:'В центре сюжета — легендарная учительница биологии Татьяна Афанасьевна, которая, по слухам, работает в школе ещё с доисторических времён. Фильм в комичной форме описывает её невероятный путь сквозь эпохи: от теории Большого взрыва до наших дней. Зрители увидят, как у неё рождается дочь (во времена Иисуса Христа), затем внучка (в эпоху Средневековья) и, наконец, правнучка (в современную эпоху ЕГЭ и технологий). Каждое поколение сталкивается со своими вызовами: римские легионы на педсовете, инквизиция на родительском собрании, каменные скрижали вместо дневников и цифровое ЕГЭ. Фильм полон школьного юмора, неожиданных поворотов и тёплой иронии. Главная мысль: хороший учитель — он навсегда, даже если его первое родительское собрание проходило в пещере.',
 tags:['комедия','фантастика','семейный'],type:'movie'}
 };
-var shopItems={'👑':50,'🌟':30,'💎':100,'🔥':40,'💀':60,'🤖':70,'👻':50,'🎭':30,'🦄':150,'🐉':200,'🦋':80,'🌈':90};
-var questTemplates=[{text:'Сыграй 3 игры',type:'play',target:3,reward:10},{text:'Напиши отзыв',type:'review',target:1,reward:15},{text:'Отправь 5 сообщений',type:'chat',target:5,reward:12},{text:'Поставь лайк 3 идеям',type:'like',target:3,reward:8},{text:'Сыграй в Змейку',type:'playSnake',target:1,reward:5},{text:'Сыграй в Тетрис',type:'playTetris',target:1,reward:5},{text:'Сыграй в Раннер',type:'playRunner',target:1,reward:5}];
-
+var shopItems = {
+    '👑': 50,
+    '🌟': 30,
+    '💎': 100,
+    '🔥': 40,
+    '💀': 60,
+    '🤖': 70,
+    '👻': 50,
+    '🎭': 30,
+    '🦄': 150,
+    '🐉': 200,
+    '🦋': 80,
+    '🌈': 90,
+    '🫀': 120,
+    '💩': 150,
+    '🐈‍⬛': 50,
+    '🔪': 100,
+    '👶🏿': 300,
+    '😏': 1
+};
+var questTemplates = [
+    { text: 'Сыграй 3 игры', type: 'play', target: 3, reward: 10 },
+    { text: 'Напиши отзыв', type: 'review', target: 1, reward: 15 },
+    { text: 'Отправь 5 сообщений в чат', type: 'chat', target: 5, reward: 12 },
+    { text: 'Поставь лайк 3 идеям', type: 'like', target: 3, reward: 8 },
+    { text: 'Сыграй в Змейку', type: 'playSnake', target: 1, reward: 5 },
+    { text: 'Сыграй в Тетрис', type: 'playTetris', target: 1, reward: 5 },
+    { text: 'Сыграй в Раннер', type: 'playRunner', target: 1, reward: 5 },
+    { text: 'Сыграй в Flappy курица', type: 'playFlappy', target: 1, reward: 7 },
+    { text: 'Сыграй в Memory', type: 'playMemory', target: 1, reward: 7 },
+    { text: 'Сыграй в Куриный дождь', type: 'playChickenRain', target: 1, reward: 7 },
+    { text: 'Сыграй в Птичий тир', type: 'playShooter', target: 1, reward: 10 },
+    { text: 'Выиграй в игре 50 очков', type: 'score50', target: 50, reward: 15 },
+    { text: 'Выиграй в игре 100 очков', type: 'score100', target: 100, reward: 20 },
+    { text: 'Опубликуй мем', type: 'postMeme', target: 1, reward: 8 },
+    { text: 'Опубликуй идею', type: 'postIdea', target: 1, reward: 8 },
+    { text: 'Предложи цитату', type: 'suggestQuote', target: 1, reward: 10 },
+    { text: 'Предложи шутку', type: 'suggestJoke', target: 1, reward: 10 },
+    { text: 'Добавь друга', type: 'addFriend', target: 1, reward: 12 },
+    { text: 'Отправь подарок другу', type: 'sendGift', target: 1, reward: 10 },
+    { text: 'Создай канал на ChickenTube', type: 'createChannel', target: 1, reward: 15 },
+    { text: 'Выложи видео на ChickenTube', type: 'postShort', target: 1, reward: 10 }
+];
 // ==================== ШУТКИ (АНЕКДОТЫ) ====================
 var jokesList = [];
 var baseJokes = [
@@ -625,6 +801,7 @@ function suggestJoke() {
     });
     
     alert('✅ Спасибо! Шутка отправлена на модерацию. Она появится после одобрения.');
+    progressQuest('suggestJoke', 1);
 }
 
 if(isAdmin) {
@@ -862,7 +1039,7 @@ function generateDailyQuests(force) {
     } else {
         dailyQuests = [];
         var shuffled = [...questTemplates].sort(() => Math.random() - 0.5);
-        for(var i = 0; i < 3; i++) {
+        for(var i = 0; i < 5; i++) {
             dailyQuests.push({
                 id: i,
                 text: shuffled[i].text,
@@ -909,7 +1086,13 @@ function renderQuests() {
 function progressQuest(type, amount) {
     if(!dailyQuests) return;
     dailyQuests.forEach(function(q) {
-        if(q.type === type && !q.completed) {
+        var matched = false;
+        if(q.type === type && !q.completed) matched = true;
+        if(type === 'play' && (q.type === 'playSnake' || q.type === 'playTetris' || q.type === 'playRunner' || q.type === 'playFlappy' || q.type === 'playMemory' || q.type === 'playChickenRain' || q.type === 'playShooter')) matched = true;
+        if(type === 'score50' && q.type === 'score50' && !q.completed && amount >= 50) matched = true;
+        if(type === 'score100' && q.type === 'score100' && !q.completed && amount >= 100) matched = true;
+        
+        if(matched) {
             q.progress = Math.min(q.target, q.progress + amount);
             if(q.progress >= q.target) q.completed = true;
         }
@@ -1060,6 +1243,7 @@ function postMeme() {
         memeMedia = null;
         memeMediaType = null;
         alert('✅ Мем опубликован!');
+        progressQuest('postMeme', 1);
     }).catch(err => {
         alert('Ошибка: ' + err.message);
     });
@@ -1127,6 +1311,7 @@ function addIdea() {
     }).then(() => {
         document.getElementById('ideaText').value = '';
         alert('✅ Идея отправлена!');
+        progressQuest('postIdea', 1);
     }).catch(err => {
         alert('Ошибка: ' + err.message);
     });
@@ -1172,9 +1357,34 @@ function loadIdeas() {
 }
 function likeIdea(id,l){db.ref('ideas/'+id).update({likes:l+1});progressQuest('like',1);}
 
-function createChannel(){var n=prompt('Название канала:');if(!n)return;myChannel=n;localStorage.setItem('tildochka_channel',n);syncOnlineProfile();alert('✅ Канал "'+n+'" создан!');}
+function createChannel(){var n=prompt('Название канала:');if(!n)return;myChannel=n;localStorage.setItem('tildochka_channel',n);syncOnlineProfile();alert('✅ Канал "'+n+'" создан!');progressQuest('createChannel', 1);}
 function previewShortVideo(){var f=document.getElementById('shortVideo').files[0];if(!f)return;var r=new FileReader();r.onload=function(e){shortMedia=e.target.result;document.getElementById('shortPreview').innerHTML='<video src="'+e.target.result+'" style="max-width:300px;border-radius:8px" controls></video>';};r.readAsDataURL(f);}
-function postShort(){var cap=document.getElementById('shortCaption').value.trim();if(!cap&&!shortMedia)return;if(!myChannel){alert('Создай канал!');return;}safeSend('short',function(){return db.ref('shorts').push({channel:myChannel,author:myName,caption:cap,media:shortMedia||null,likes:0,comments:{},ts:Date.now()}).then(function(){document.getElementById('shortCaption').value='';document.getElementById('shortVideo').value='';document.getElementById('shortPreview').innerHTML='';shortMedia=null;});});}
+function postShort(){
+    var cap = document.getElementById('shortCaption').value.trim();
+    if(!cap && !shortMedia) return;
+    if(!myChannel){
+        alert('Создай канал!');
+        return;
+    }
+    safeSend('short', function(){
+        return db.ref('shorts').push({
+            channel: myChannel,
+            author: myName,
+            caption: cap,
+            media: shortMedia || null,
+            likes: 0,
+            comments: {},
+            ts: Date.now()
+        }).then(function(){
+            document.getElementById('shortCaption').value = '';
+            document.getElementById('shortVideo').value = '';
+            document.getElementById('shortPreview').innerHTML = '';
+            shortMedia = null;
+            // 👇👇👇 ДОБАВЬ ЭТУ СТРОЧКУ 👇👇👇
+            progressQuest('postShort', 1);
+        });
+    });
+}
 function loadShorts() {
     db.ref('shorts').on('value', (snapshot) => {
         const shorts = [];
@@ -2212,7 +2422,7 @@ document.onkeydown=function(e){if(e.key===' '||e.key==='ArrowUp'){e.preventDefau
 c.onclick=jump;
 c.addEventListener('touchstart',function(e){e.preventDefault();jump();});
 pipes.push(sp());
-function loop(){if(ov)return;ctx.clearRect(0,0,400,500);var grad=ctx.createLinearGradient(0,0,0,500);grad.addColorStop(0,'#4a90d9');grad.addColorStop(1,'#87CEEB');ctx.fillStyle=grad;ctx.fillRect(0,0,400,500);vy+=0.5;bird.y+=vy;ctx.fillStyle='#ffd700';ctx.beginPath();ctx.arc(bird.x,bird.y,15,0,Math.PI*2);ctx.fill();ctx.fillStyle='#000';ctx.beginPath();ctx.arc(bird.x+5,bird.y-5,3,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f60';ctx.beginPath();ctx.arc(bird.x+8,bird.y+2,5,0,Math.PI*2);ctx.fill();if(pipes.length===0||pipes[pipes.length-1].x<250)pipes.push(sp());for(var i=pipes.length-1;i>=0;i--){pipes[i].x-=2;ctx.fillStyle='#2d5a1e';ctx.fillRect(pipes[i].x,0,45,pipes[i].top);ctx.fillRect(pipes[i].x,pipes[i].bottom,45,500-pipes[i].bottom);ctx.fillStyle='#4a8c2a';ctx.fillRect(pipes[i].x-3,pipes[i].top-20,51,20);ctx.fillRect(pipes[i].x-3,pipes[i].bottom,51,20);if(pipes[i].x+45<0){pipes.splice(i,1);sc++;playSound("coin");document.getElementById('gameScoreDisplay').textContent='Счёт: '+sc;}if(bird.x+15>pipes[i].x&&bird.x-15<pipes[i].x+45&&(bird.y-15<pipes[i].top||bird.y+15>pipes[i].bottom))end();}if(bird.y>480||bird.y<0)end();}function end(){ov=true;clearInterval(gameInterval);playSound("hit");var b=document.createElement('button');b.textContent='🔄 Заново';b.onclick=function(){document.getElementById('gameContent').innerHTML='';initFlappy();};document.getElementById('gameContent').appendChild(b);alert('Счёт: '+sc);}gameInterval=setInterval(loop,20);}
+function loop(){if(ov)return;ctx.clearRect(0,0,400,500);var grad=ctx.createLinearGradient(0,0,0,500);grad.addColorStop(0,'#4a90d9');grad.addColorStop(1,'#87CEEB');ctx.fillStyle=grad;ctx.fillRect(0,0,400,500);vy+=0.5;bird.y+=vy;ctx.fillStyle='#ffd700';ctx.beginPath();ctx.arc(bird.x,bird.y,15,0,Math.PI*2);ctx.fill();ctx.fillStyle='#000';ctx.beginPath();ctx.arc(bird.x+5,bird.y-5,3,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f60';ctx.beginPath();ctx.arc(bird.x+8,bird.y+2,5,0,Math.PI*2);ctx.fill();if(pipes.length===0||pipes[pipes.length-1].x<250)pipes.push(sp());for(var i=pipes.length-1;i>=0;i--){pipes[i].x-=2;ctx.fillStyle='#2d5a1e';ctx.fillRect(pipes[i].x,0,45,pipes[i].top);ctx.fillRect(pipes[i].x,pipes[i].bottom,45,500-pipes[i].bottom);ctx.fillStyle='#4a8c2a';ctx.fillRect(pipes[i].x-3,pipes[i].top-20,51,20);ctx.fillRect(pipes[i].x-3,pipes[i].bottom,51,20);if(pipes[i].x+45<0){pipes.splice(i,1);sc++;playSound("coin");document.getElementById('gameScoreDisplay').textContent='Счёт: '+sc;}if(bird.x+15>pipes[i].x&&bird.x-15<pipes[i].x+45&&(bird.y-15<pipes[i].top||bird.y+15>pipes[i].bottom))end();}if(bird.y>480||bird.y<0)end();}function end(){ov=true;clearInterval(gameInterval);playSound("hit");if(sc >= 50) progressQuest('score50', sc);if(sc >= 100) progressQuest('score100', sc);var b=document.createElement('button');b.textContent='🔄 Заново';b.onclick=function(){document.getElementById('gameContent').innerHTML='';initFlappy();};document.getElementById('gameContent').appendChild(b);alert('Счёт: '+sc);}gameInterval=setInterval(loop,20);}
 
 
 // ==================== КУРИНЫЙ ДОЖДЬ (БЕЗ БЕЛЫХ ПОЛОСОК - ВИДНО ТРИ ПОЛОСКИ) ====================
@@ -2261,6 +2471,8 @@ eggs.splice(i,1);
 if(!ov){
 ov=true;
 playSound("hit");
+if(score >= 50) progressQuest('score50', score);
+if(score >= 100) progressQuest('score100', score);
 var b=document.createElement('button');
 b.textContent='🔄 Заново';
 b.onclick=function(){document.getElementById('gameContent').innerHTML='';initChickenRain();};
@@ -2400,6 +2612,8 @@ function end(){
 ov=true;
 clearInterval(gameInterval);
 playSound("hit");
+if(score >= 50) progressQuest('score50', score);
+if(score >= 100) progressQuest('score100', score);
 var b=document.createElement('button');
 b.textContent='🔄 Заново';
 b.style.cssText='display:block;margin:15px auto;font-size:18px';
@@ -2414,14 +2628,83 @@ update();
 gameInterval=setInterval(function(){},1000);
 }
 // ==================== ЗМЕЙКА, ТЕТРИС, УГАДАЙ ЧИСЛО, КАМЕНЬ-НОЖНИЦЫ ====================
-function initSnake(){document.getElementById('gameContent').innerHTML='<canvas id="sc" width="400" height="400" class="game-canvas"></canvas><div class="ds4"><div></div><button class="ds4-btn" id="su">↑</button><div></div><button class="ds4-btn" id="sl">←</button><div></div><button class="ds4-btn" id="sr">→</button><div></div><button class="ds4-btn" id="sd">↓</button><div></div></div>';createGameRating();var c=document.getElementById('sc'),ctx=c.getContext('2d'),sn=[{x:200,y:200}],food=rf(),dir={x:20,y:0},sc=0,ov=false;function rf(){return{x:Math.floor(Math.random()*20)*20,y:Math.floor(Math.random()*20)*20};}function cd(nd){if(ov||(nd.x===-dir.x&&nd.y===-dir.y)||(nd.x!==0&&dir.x!==0)||(nd.y!==0&&dir.y!==0))return;dir=nd;playSound("jump");}document.getElementById('su').onclick=function(){cd({x:0,y:-20});};document.getElementById('sd').onclick=function(){cd({x:0,y:20});};document.getElementById('sl').onclick=function(){cd({x:-20,y:0});};document.getElementById('sr').onclick=function(){cd({x:20,y:0});};document.onkeydown=function(e){if(e.key==='ArrowLeft')cd({x:-20,y:0});if(e.key==='ArrowRight')cd({x:20,y:0});if(e.key==='ArrowUp')cd({x:0,y:-20});if(e.key==='ArrowDown')cd({x:0,y:20});e.preventDefault();};function loop(){if(ov)return;var h={x:sn[0].x+dir.x,y:sn[0].y+dir.y};if(h.x<0||h.x>=400||h.y<0||h.y>=400||sn.some(function(s){return s.x===h.x&&s.y===h.y;})){end(sc);return;}sn.unshift(h);if(h.x===food.x&&h.y===food.y){sc++;playSound("coin");document.getElementById('gameScoreDisplay').textContent='Счёт: '+sc;food=rf();}else sn.pop();ctx.clearRect(0,0,400,400);ctx.fillStyle='#ffd700';ctx.fillRect(food.x,food.y,18,18);ctx.fillStyle='#4CAF50';sn.forEach(function(s){ctx.fillRect(s.x,s.y,18,18);});}function end(s){ov=true;clearInterval(gameInterval);playSound("hit");var b=document.createElement('button');b.textContent='🔄 Заново';b.onclick=function(){document.getElementById('gameContent').innerHTML='';initSnake();};document.getElementById('gameContent').appendChild(b);alert('Счёт: '+s);}gameInterval=setInterval(loop,100);}
+function initSnake(){
+    document.getElementById('gameContent').innerHTML='<canvas id="sc" width="400" height="400" class="game-canvas"></canvas><div class="ds4"><div></div><button class="ds4-btn" id="su">↑</button><div></div><button class="ds4-btn" id="sl">←</button><div></div><button class="ds4-btn" id="sr">→</button><div></div><button class="ds4-btn" id="sd">↓</button><div></div></div>';
+    createGameRating();
+    var c=document.getElementById('sc'),ctx=c.getContext('2d'),sn=[{x:200,y:200}],food=rf(),dir={x:20,y:0},sc=0,ov=false;
+    
+    function rf(){
+        return{x:Math.floor(Math.random()*20)*20,y:Math.floor(Math.random()*20)*20};
+    }
+    
+    function cd(nd){
+        if(ov||(nd.x===-dir.x&&nd.y===-dir.y)||(nd.x!==0&&dir.x!==0)||(nd.y!==0&&dir.y!==0))return;
+        dir=nd;
+        playSound("jump");
+    }
+    
+    document.getElementById('su').onclick=function(){cd({x:0,y:-20});};
+    document.getElementById('sd').onclick=function(){cd({x:0,y:20});};
+    document.getElementById('sl').onclick=function(){cd({x:-20,y:0});};
+    document.getElementById('sr').onclick=function(){cd({x:20,y:0});};
+    
+    document.onkeydown=function(e){
+        if(e.key==='ArrowLeft')cd({x:-20,y:0});
+        if(e.key==='ArrowRight')cd({x:20,y:0});
+        if(e.key==='ArrowUp')cd({x:0,y:-20});
+        if(e.key==='ArrowDown')cd({x:0,y:20});
+        e.preventDefault();
+    };
+    
+    function loop(){
+        if(ov)return;
+        var h={x:sn[0].x+dir.x,y:sn[0].y+dir.y};
+        if(h.x<0||h.x>=400||h.y<0||h.y>=400||sn.some(function(s){return s.x===h.x&&s.y===h.y;})){
+            end(sc);
+            return;
+        }
+        sn.unshift(h);
+        if(h.x===food.x&&h.y===food.y){
+            sc++;
+            playSound("coin");
+            document.getElementById('gameScoreDisplay').textContent='Счёт: '+sc;
+            food=rf();
+        }else sn.pop();
+        ctx.clearRect(0,0,400,400);
+        ctx.fillStyle='#ffd700';
+        ctx.fillRect(food.x,food.y,18,18);
+        ctx.fillStyle='#4CAF50';
+        sn.forEach(function(s){ctx.fillRect(s.x,s.y,18,18);});
+    }
+    
+    function end(s){
+        ov=true;
+        clearInterval(gameInterval);
+        playSound("hit");
+        
+        // 👇👇👇 ЗАДАНИЯ НА ОЧКИ 👇👇👇
+        if(s >= 50) progressQuest('score50', s);
+        if(s >= 100) progressQuest('score100', s);
+        
+        var b=document.createElement('button');
+        b.textContent='🔄 Заново';
+        b.onclick=function(){
+            document.getElementById('gameContent').innerHTML='';
+            initSnake();
+        };
+        document.getElementById('gameContent').appendChild(b);
+        alert('Счёт: '+s);
+    }
+    
+    gameInterval=setInterval(loop,100);
+}
 function initTetris(){document.getElementById('gameContent').innerHTML='<canvas id="tc" width="300" height="480" class="game-canvas"></canvas><div class="ds4"><div></div><button class="ds4-btn" id="tu">↑</button><div></div><button class="ds4-btn" id="tl">←</button><div></div><button class="ds4-btn" id="tr">→</button><div></div><button class="ds4-btn" id="td">↓</button><div></div></div>';createGameRating();var c=document.getElementById('tc'),ctx=c.getContext('2d'),COLS=10,ROWS=15,BLOCK=30;c.width=COLS*BLOCK;c.height=ROWS*BLOCK;var board=Array(ROWS).fill().map(function(){return Array(COLS).fill(0);});var shapes=[[[1,1,1,1]],[[1,1],[1,1]],[[1,1,0],[0,1,1]],[[0,1,1],[1,1,0]],[[1,0,0],[1,1,1]]];var piece=newPiece(),sc=0,ov=false,last=Date.now();function newPiece(){var s=shapes[Math.floor(Math.random()*shapes.length)];return{shape:s,x:Math.floor(COLS/2)-Math.floor(s[0].length/2),y:0};}function collide(){for(var y=0;y<piece.shape.length;y++)for(var x=0;x<piece.shape[y].length;x++)if(piece.shape[y][x]){if(piece.y+y>=ROWS||piece.x+x<0||piece.x+x>=COLS)return true;if(piece.y+y>=0&&board[piece.y+y][piece.x+x])return true;}return false;}function merge(){for(var y=0;y<piece.shape.length;y++)for(var x=0;x<piece.shape[y].length;x++)if(piece.shape[y][x])board[piece.y+y][piece.x+x]=1;}function rotate(){var rot=piece.shape[0].map(function(_,i){return piece.shape.map(function(r){return r[i];}).reverse();});var prev=piece.shape;piece.shape=rot;if(collide())piece.shape=prev;else playSound("jump");}function clearLines(){for(var y=ROWS-1;y>=0;y--){if(board[y].every(function(c){return c;})){board.splice(y,1);board.unshift(Array(COLS).fill(0));sc+=100;playSound("coin");y++;}}document.getElementById('gameScoreDisplay').textContent='Счёт: '+sc;}function drop(){piece.y++;if(collide()){piece.y--;merge();clearLines();piece=newPiece();if(collide())end();playSound("hit");}last=Date.now();}function ml(){piece.x--;if(collide())piece.x++;else playSound("jump");}function mr(){piece.x++;if(collide())piece.x--;else playSound("jump");}
 document.getElementById('tl').onclick=function(){if(!ov)ml();};document.getElementById('tr').onclick=function(){if(!ov)mr();};
 document.getElementById('tu').onclick=function(){if(!ov)rotate();};document.getElementById('td').onclick=function(){if(!ov)drop();};
 document.onkeydown=function(e){if(ov)return;if(e.key==='ArrowLeft')ml();if(e.key==='ArrowRight')mr();if(e.key==='ArrowDown')drop();if(e.key==='ArrowUp')rotate();e.preventDefault();};
 function draw(){ctx.fillStyle='#000';ctx.fillRect(0,0,300,480);for(var y=0;y<ROWS;y++)for(var x=0;x<COLS;x++)if(board[y][x]){ctx.fillStyle='#ffd700';ctx.fillRect(x*BLOCK,y*BLOCK,BLOCK-1,BLOCK-1);}for(var y=0;y<piece.shape.length;y++)for(var x=0;x<piece.shape[y].length;x++)if(piece.shape[y][x]){ctx.fillStyle='#f60';ctx.fillRect((piece.x+x)*BLOCK,(piece.y+y)*BLOCK,BLOCK-1,BLOCK-1);}}
 function loop(){if(ov)return;if(Date.now()-last>500)drop();draw();requestAnimationFrame(loop);}
-function end(){ov=true;playSound("hit");var b=document.createElement('button');b.textContent='🔄 Заново';b.onclick=function(){document.getElementById('gameContent').innerHTML='';initTetris();};document.getElementById('gameContent').appendChild(b);alert('Счёт: '+sc);}
+function end(){ov=true;playSound("hit");if(sc >= 50) progressQuest('score50', sc);if(sc >= 100) progressQuest('score100', sc);var b=document.createElement('button');b.textContent='🔄 Заново';b.onclick=function(){document.getElementById('gameContent').innerHTML='';initTetris();};document.getElementById('gameContent').appendChild(b);alert('Счёт: '+sc);}
 requestAnimationFrame(loop);}
 function initGuess(){createGameRating();var n=Math.floor(Math.random()*100)+1,a=0;document.getElementById('gameContent').innerHTML='<p>Угадай число 1-100!</p><input id="gi" type="number"><br><button onclick="guessClick()">Угадать</button><p id="gh"></p>';window.guessClick=function(){var g=parseInt(document.getElementById('gi').value);if(!g)return;a++;playSound("jump");if(g===n){alert('Победа! '+a+' попыток!');addEggs(5,'Победа!');}else document.getElementById('gh').textContent=g<n?'🔺 Больше!':'🔻 Меньше!';document.getElementById('gameScoreDisplay').textContent='Попыток: '+a;};}
 function initRPS(){createGameRating();var sc={p:0,b:0};document.getElementById('gameContent').innerHTML='<div style="display:flex;gap:10px;justify-content:center"><button onclick="rpsClick(0)" style="font-size:22px;padding:18px">🪨</button><button onclick="rpsClick(1)" style="font-size:22px;padding:18px">📄</button><button onclick="rpsClick(2)" style="font-size:22px;padding:18px">✂️</button></div><p id="rr"></p>';window.rpsClick=function(p){var bot=Math.floor(Math.random()*3);playSound("jump");if(p===bot)document.getElementById('rr').textContent='Ничья!';else if((p===0&&bot===2)||(p===1&&bot===0)||(p===2&&bot===1)){sc.p++;document.getElementById('rr').textContent='Ты победил!';addEggs(2,'Победа!');}else{sc.b++;document.getElementById('rr').textContent='Бот победил!';}document.getElementById('gameScoreDisplay').textContent='Ты: '+sc.p+' | Бот: '+sc.b;};}
@@ -2537,6 +2820,7 @@ function addFriend() {
                     ts: Date.now()
                 });
                 alert('✅ Заявка отправлена пользователю ' + friendName);
+                progressQuest('addFriend', 1);
                 document.getElementById('friendNameInput').value = '';
             });
         });
@@ -2604,6 +2888,7 @@ function sendGift(friendUid, friendName) {
         });
         
         alert('🎁 Подарок отправлен!');
+        progressQuest('sendGift', 1);
     }
 }
 
@@ -2757,6 +3042,9 @@ function initShooter(){
             if(timeLeft <= 0) {
                 clearInterval(timerInterval);
                 gameActive = false;
+                // Там где игра окончена (победа или проигрыш), добавь:
+                if(gameScore >= 50) progressQuest('score50', gameScore);
+                if(gameScore >= 100) progressQuest('score100', gameScore);
                 alert('⏰ Время вышло! Игра окончена! Счёт: ' + gameScore);
             } else {
                 timeLeft--;
@@ -2994,6 +3282,9 @@ function initShooter(){
             if(misses >= maxMisses) {
                 gameActive = false;
                 if(timerInterval) clearInterval(timerInterval);
+                // Там где игра окончена (победа или проигрыш), добавь:
+                if(gameScore >= 50) progressQuest('score50', gameScore);
+                if(gameScore >= 100) progressQuest('score100', gameScore);
                 alert('😢 Игра окончена! 10 промахов! Счёт: ' + gameScore);
             }
         }
@@ -3006,6 +3297,9 @@ function initShooter(){
         if(allTargetsHit && flyingAnimals.length === 0 && groundAnimals.length === 0 && gameActive) {
             gameActive = false;
             if(timerInterval) clearInterval(timerInterval);
+            // Там где игра окончена (победа или проигрыш), добавь:
+            if(gameScore >= 50) progressQuest('score50', gameScore);
+            if(gameScore >= 100) progressQuest('score100', gameScore);
             setTimeout(function() {
                 alert('🏆 ПОБЕДА! Ты сбил всё! Счёт: ' + gameScore);
             }, 100);
@@ -3455,6 +3749,7 @@ function suggestQuote() {
     });
     
     alert('✅ Спасибо! Цитата отправлена на модерацию. Она появится после одобрения.');
+    progressQuest('suggestQuote', 1);
 }
 
 // Админ-панель цитат
